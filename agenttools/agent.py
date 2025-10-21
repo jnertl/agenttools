@@ -3,6 +3,7 @@
 import os
 from typing import Optional
 from dotenv import load_dotenv
+import re
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,6 +11,7 @@ from langchain_ollama import ChatOllama
 
 from agenttools.tools import get_file_tools
 from agenttools.formatters import normalize_content
+from agenttools.system_prompt import load_system_prompt
 
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
@@ -33,7 +35,7 @@ class FileAgent:
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY not found in environment variables")
 
-            model_name = model or os.getenv("GEMINI_MODEL", "gemini-pro")
+            model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             self.llm = ChatGoogleGenerativeAI(
                 model=model_name,
                 google_api_key=api_key,
@@ -58,17 +60,22 @@ class FileAgent:
         else:
             raise ValueError(f"Unsupported provider: {provider}. Use 'gemini' or 'ollama'")
 
-        # Create the agent with system message
-        system_message = (
-            "You are a helpful AI assistant with access to file system tools.\n"
-            "You can read files, write files, list directories, and check if files exist.\n"
-            "Always be clear about what operations you're performing and their results.\n"
-            "If you encounter errors, explain them clearly to the user."
-        )
+        # Create the agent with system message. Load from SYSTEM_PROMPT_FILE
+        # (with {{VARNAME}} substitutions) using the helper in
+        # `agenttools.system_prompt`. This function raises ValueError if the
+        # env var or referenced placeholders are missing. If you prefer the
+        # built-in default, do not set SYSTEM_PROMPT_FILE.
+        env_path = os.getenv("SYSTEM_PROMPT_FILE")
+        if env_path:
+            # SYSTEM_PROMPT_FILE set: load it and allow errors (e.g. missing
+            # referenced env vars) to propagate so callers can see the issue.
+            system_prompt = load_system_prompt()
+        else:
+            raise ValueError("SYSTEM_PROMPT_FILE environment variable must be set.")
 
-        # Use the newer langchain.agents.create_agent API. Pass the system
-        # prompt as `system_prompt` to prime the agent's behavior.
-        self.agent_executor = create_agent(self.llm, self.tools, system_prompt=system_message)
+        print("Using system prompt:")
+        print(system_prompt)
+        self.agent_executor = create_agent(self.llm, self.tools, system_prompt=system_prompt)
 
     def run(self, query: str) -> str:
         """Run the agent with a user query.

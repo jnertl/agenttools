@@ -40,6 +40,7 @@ Create a `.env` file based on `.env.example`:
 - **LLM_PROVIDER**: Default provider ('gemini' or 'ollama')
 - **GEMINI_MODEL**: Gemini model name (default: gemini-pro)
 - **OLLAMA_MODEL**: Ollama model name (default: llama2)
+ - **SYSTEM_PROMPT_FILE**: Mandatory path to a text file containing the system prompt. The file may contain placeholders of the form `{{VARNAME}}` which will be replaced by the corresponding environment variable at startup. The agent will fail to start if a referenced environment variable is missing.
 
 ## Quick Start
 
@@ -112,6 +113,7 @@ The agent has access to the following file system tools:
 
 1. **read_file**: Read the contents of a file
 2. **write_file**: Write content to a file
+   - If `file_path` contains a directory component (e.g. `logs/app.txt`) the directory will be created if it doesn't exist. If `file_path` is just a filename (e.g. `notes.txt`) the file will be created in the current working directory where the script is invoked.
 3. **list_directory**: List files and directories in a path
 4. **file_exists**: Check if a file or directory exists
 
@@ -153,14 +155,6 @@ The `FileAgent` class provides:
 ### 3. Examples (`examples/`)
 - **demo_tools.py**: Demonstrates file tools without requiring API keys
 - **basic_usage.py**: Shows how to use the FileAgent programmatically
-
-## Development
-
-Install in development mode:
-
-```bash
-pip install -e .
-```
 
 ## License
 
