@@ -12,7 +12,7 @@ from agenttools.tools import get_file_tools
 
 
 class FileAgent:
-    """An AI agent with file access capabilities."""
+    """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
     
     def __init__(self, provider: str = "gemini", model: Optional[str] = None):
         """Initialize the FileAgent.
