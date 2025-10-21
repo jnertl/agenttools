@@ -39,7 +39,44 @@ Create a `.env` file based on `.env.example`:
 - **GEMINI_MODEL**: Gemini model name (default: gemini-pro)
 - **OLLAMA_MODEL**: Ollama model name (default: llama2)
 
+## Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Try the demo (no API keys needed):**
+   ```bash
+   python examples/demo_tools.py
+   ```
+
+3. **Set up your environment for the AI agent:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+
+4. **Run the agent:**
+   ```bash
+   # With Gemini (requires GOOGLE_API_KEY)
+   python -m agenttools.agent --provider gemini
+   
+   # With Ollama (requires Ollama running locally)
+   python -m agenttools.agent --provider ollama
+   ```
+
 ## Usage
+
+### Demo Without API Keys
+
+To see the file tools in action without needing API keys:
+
+```bash
+python examples/demo_tools.py
+```
+
+This will demonstrate all four file access tools (read, write, list, exists) working independently.
 
 ### Interactive Mode
 
@@ -100,6 +137,31 @@ The agent has access to the following file system tools:
 - "Create a new file called notes.txt with my task list"
 - "Check if README.md exists"
 - "List all Python files in the agenttools directory"
+
+## Architecture
+
+The project is structured around three main components:
+
+### 1. File Tools (`agenttools/tools.py`)
+- **read_file**: Read contents from a file
+- **write_file**: Write content to a file (creates directories as needed)
+- **list_directory**: List files and directories with size information
+- **file_exists**: Check if a path exists and get its type
+
+All tools are implemented as Langchain tools using the `@tool` decorator, making them automatically compatible with Langchain agents.
+
+### 2. FileAgent Class (`agenttools/agent.py`)
+The `FileAgent` class provides:
+- **Multi-provider support**: Works with both Gemini and Ollama
+- **Flexible initialization**: Configure provider and model at runtime
+- **Two interaction modes**:
+  - `run()`: Execute single queries programmatically
+  - `chat()`: Interactive command-line interface
+- **Error handling**: Graceful handling of API errors and tool failures
+
+### 3. Examples (`examples/`)
+- **demo_tools.py**: Demonstrates file tools without requiring API keys
+- **basic_usage.py**: Shows how to use the FileAgent programmatically
 
 ## Development
 
