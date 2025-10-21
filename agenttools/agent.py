@@ -12,6 +12,10 @@ from langchain_ollama import ChatOllama
 from agenttools.tools import get_file_tools
 from agenttools.formatters import normalize_content
 from agenttools.system_prompt import load_system_prompt
+from agenttools.tracing import trace_print
+
+# File where AI responses are appended
+AI_RESPONSE_FILE = "ai_response.md"
 
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
@@ -73,8 +77,8 @@ class FileAgent:
         else:
             raise ValueError("SYSTEM_PROMPT_FILE environment variable must be set.")
 
-        print("Using system prompt:")
-        print(system_prompt)
+        trace_print("Using system prompt:")
+        trace_print(system_prompt)
         self.agent_executor = create_agent(self.llm, self.tools, system_prompt=system_prompt)
 
     def run(self, query: str) -> str:
@@ -103,12 +107,29 @@ class FileAgent:
                 last = msgs[-1]
                 # Message may expose `.content` or be a mapping
                 if hasattr(last, "content"):
-                    return normalize_content(last.content)
-                if isinstance(last, dict) and "content" in last:
-                    return normalize_content(last["content"])
+                    out = normalize_content(last.content)
+                elif isinstance(last, dict) and "content" in last:
+                    out = normalize_content(last["content"])
+                else:
+                    out = normalize_content(last)
+
+                # Append to ai_response.md and return
+                try:
+                    with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
+                        f.write(out + "\n")
+                except Exception as io_err:
+                    trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+
+                return out
 
             # Nothing matched; return a readable representation
-            return normalize_content(result)
+            out = normalize_content(result)
+            try:
+                with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
+                    f.write(out + "\n")
+            except Exception as io_err:
+                trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+            return out
         except Exception as e:
             msg = str(e)
             # Provide a helpful hint when the Ollama client cannot connect to the
@@ -122,34 +143,43 @@ class FileAgent:
                     "Make sure the Ollama server/daemon is running and that OLLAMA_BASE_URL is set correctly.\n"
                     "You can test connectivity with: curl <base_url>  or check listening ports: ss -ltnp | grep 11434"
                 )
-                return f"Error executing agent: {msg}{hint}"
+                out = f"Error executing agent: {msg}{hint}"
+            else:
+                out = f"Error executing agent: {msg}"
 
-            return f"Error executing agent: {msg}"
+            # Attempt to append the error/output to ai_response.md
+            try:
+                with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
+                    f.write(out + "\n")
+            except Exception as io_err:
+                trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+
+            return out
 
     def chat(self):
         """Start an interactive chat session with the agent."""
-        print(f"Starting chat with {self.provider.upper()} agent...")
-        print("Type 'exit' or 'quit' to end the session.\n")
+        trace_print(f"Starting chat with {self.provider.upper()} agent...")
+        trace_print("Type 'exit' or 'quit' to end the session.\n")
 
         while True:
             try:
                 user_input = input("You: ").strip()
 
                 if user_input.lower() in ["exit", "quit"]:
-                    print("Goodbye!")
+                    trace_print("Goodbye!")
                     break
 
                 if not user_input:
                     continue
 
                 response = self.run(user_input)
-                print(f"\nAgent: {response}\n")
+                trace_print(f"\nAgent: {response}\n")
 
             except KeyboardInterrupt:
-                print("\n\nGoodbye!")
+                trace_print("\n\nGoodbye!")
                 break
             except Exception as e:
-                print(f"\nError: {str(e)}\n")
+                trace_print(f"\nError: {str(e)}\n")
 
 
 def main():
@@ -175,22 +205,36 @@ def main():
         type=str,
         help="Single query to execute (if not provided, starts interactive mode)",
     )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="Run the agent in silent tracing mode (log to file only, no console prints)",
+    )
 
     args = parser.parse_args()
 
     try:
+        # Configure tracer silent mode if requested
+        try:
+            from agenttools.tracing import set_silent
+
+            set_silent(args.silent)
+        except Exception:
+            # If tracer setter is unavailable for any reason, continue without failing
+            pass
+
         agent = FileAgent(provider=args.provider, model=args.model)
 
         if args.query:
             # Single query mode
             response = agent.run(args.query)
-            print(response)
+            #trace_print(response)
         else:
             # Interactive mode
             agent.chat()
 
     except Exception as e:
-        print(f"Error initializing agent: {str(e)}")
+        trace_print(f"Error initializing agent: {str(e)}")
         return 1
 
     return 0
