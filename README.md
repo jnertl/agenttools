@@ -18,9 +18,11 @@ git clone https://github.com/jnertl/agenttools.git
 cd agenttools
 ```
 
-2. Install dependencies:
+2. Install Python dependencies:
 ```bash
-pip install -r requirements.txt
+uv venv venv_agenttools
+. venv_agenttools/bin/activate
+uv pip install -r requirements.txt
 ```
 
 3. Set up environment variables:
@@ -41,23 +43,12 @@ Create a `.env` file based on `.env.example`:
 
 ## Quick Start
 
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Try the demo (no API keys needed):**
+**Try the demo (no API keys needed):**
    ```bash
    python examples/demo_tools.py
    ```
 
-3. **Set up your environment for the AI agent:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys
-   ```
-
-4. **Run the agent:**
+**Run the agent:**
    ```bash
    # With Gemini (requires GOOGLE_API_KEY)
    python -m agenttools.agent --provider gemini
