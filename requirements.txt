@@ -1,0 +1,10 @@
+# Core Langchain dependencies
+langchain>=0.3.0
+langchain-core>=0.3.0
+
+# LLM Provider integrations
+langchain-google-genai>=2.0.0
+langchain-ollama>=0.2.0
+
+# Utilities
+python-dotenv>=1.0.1
