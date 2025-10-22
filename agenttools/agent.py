@@ -42,9 +42,8 @@ class FileAgent:
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY not found in environment variables")
 
-            model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             self.llm = ChatGoogleGenerativeAI(
-                model=model_name,
+                model=model,
                 google_api_key=api_key,
                 temperature=0.1,
                 top_p=0.8,
@@ -52,12 +51,11 @@ class FileAgent:
                 max_tokens=4096
             )
         elif self.provider == "ollama":
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            base_url = os.getenv("OLLAMA_BASE_URL", "http://10.0.2.2:11434")
             # keep for error messages
             self.base_url = base_url
-            model_name = model or os.getenv("OLLAMA_MODEL", "granite4:micro-h")
             self.llm = ChatOllama(
-                model=model_name,
+                model=model,
                 base_url=base_url,
                 temperature=0.1,
                 top_p=0.8,

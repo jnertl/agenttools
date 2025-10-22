@@ -37,9 +37,6 @@ Create a `.env` file based on `.env.example`:
 
 - **GOOGLE_API_KEY**: Your Google API key for Gemini (required if using Gemini)
 - **OLLAMA_BASE_URL**: URL for your Ollama instance (default: http://localhost:11434)
-- **LLM_PROVIDER**: Default provider ('gemini' or 'ollama')
-- **GEMINI_MODEL**: Gemini model name (default: gemini-pro)
-- **OLLAMA_MODEL**: Ollama model name (default: llama2)
  - **SYSTEM_PROMPT_FILE**: Mandatory path to a text file containing the system prompt. The file may contain placeholders of the form `{{VARNAME}}` which will be replaced by the corresponding environment variable at startup. The agent will fail to start if a referenced environment variable is missing.
 
 ## Quick Start
