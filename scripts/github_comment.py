@@ -8,7 +8,14 @@ Usage examples:
 
 import sys
 import argparse
+from pathlib import Path
 from typing import Optional
+
+# When this script is executed directly, ensure the project root is on sys.path
+# so local package imports (agenttools) work even if the package isn't installed.
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 from agenttools.github_issues import send_issue_comment
 
