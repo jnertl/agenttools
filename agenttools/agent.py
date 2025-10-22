@@ -22,13 +22,12 @@ AI_RESPONSE_FILE = "agent_response.md"
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
 
-    def __init__(self, provider: str = None, model: str = None, silent: bool = False):
+    def __init__(self, provider: str = None, model: str = None):
         """Initialize the FileAgent.
 
         Args:
             provider: LLM provider to use ('gemini' or 'ollama')
             model: Specific model name to use (optional, uses defaults from .env)
-            trace: Whether to enable tracing output
         """
         # This will load environment variables from a .env file if present
         load_dotenv()
@@ -71,9 +70,8 @@ class FileAgent:
         else:
             raise ValueError("SYSTEM_PROMPT_FILE environment variable must be set.")
 
-        if not silent:
-            tracing.trace_print("Using system prompt:")
-            tracing.trace_print(system_prompt)
+        tracing.trace_print("Using system prompt:", log_only=True)
+        tracing.trace_print(system_prompt, log_only=True)
 
         self.agent_executor = create_agent(self.llm, self.tools, system_prompt=system_prompt)
 
@@ -111,7 +109,7 @@ class FileAgent:
                 else:
                     out = normalize_content(last)
 
-                # Append to ai_response.md and return
+                # Append to AI_RESPONSE_FILE and return
                 try:
                     with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
                         f.write(out + "\n")
@@ -130,29 +128,11 @@ class FileAgent:
             return out
         except Exception as e:
             msg = str(e)
-            # Provide a helpful hint when the Ollama client cannot connect to the
-            # local Ollama server (common when it's not running or wrong URL).
-            if self.provider == "ollama" and (
-                "Connection refused" in msg or "ConnectError" in msg or "[Errno 111]" in msg
-            ):
-                base = getattr(self, "base_url", "http://localhost:11434")
-                hint = (
-                    f"\nHint: The Ollama client could not connect to {base}.\n"
-                    "Make sure the Ollama server/daemon is running and that OLLAMA_BASE_URL is set correctly.\n"
-                    "You can test connectivity with: curl <base_url>  or check listening ports: ss -ltnp | grep 11434"
-                )
-                out = f"Error executing agent: {msg}{hint}"
-            else:
-                out = f"Error executing agent: {msg}"
-
-            # Attempt to append the error/output to ai_response.md
-            try:
-                with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
-                    f.write(out + "\n")
-            except Exception as io_err:
-                tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
-
+            out = f"Error executing agent: {msg}"
+            tracing.trace_print(out)
             return out
+
+        return "[ERROR] Running agent failed!"
 
     def chat(self):
         """Start an interactive chat session with the agent."""
@@ -214,11 +194,12 @@ def main():
     try:
         # Configure tracer silent mode if requested
         tracing.set_silent(args.silent)
-        agent = FileAgent(provider=args.provider, model=args.model, silent=args.silent)
+        agent = FileAgent(provider=args.provider, model=args.model)
 
         if args.query:
             # Single query mode
             response = agent.run(args.query)
+            tracing.trace_print(f"\n\nAgent response:\n{response}")
         else:
             # Interactive mode
             agent.chat()
