@@ -17,7 +17,7 @@ from agenttools.system_prompt import load_system_prompt
 import agenttools.tracing as tracing
 
 # File where AI responses are appended
-AI_RESPONSE_FILE = "ai_response.md"
+AI_RESPONSE_FILE = "agent_response.md"
 
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
