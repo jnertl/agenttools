@@ -8,6 +8,7 @@ working directory.
 from __future__ import annotations
 
 import os
+import pprint
 from typing import Any
 from datetime import datetime, timezone
 
@@ -26,16 +27,12 @@ def set_silent(silent: bool) -> None:
     _SILENT = bool(silent)
 
 
-def trace_print(*args: Any, sep: str = " ", end: str = "\n", flush: bool = False) -> None:
-    """Print to stdout and append the same text to `agent_log.txt`.
-
-    Each call is prefixed with an ISO timestamp in the log file.
-    """
+def trace_print(*args: Any, sep: str = " ", end: str = "\n", flush: bool = False, log_only: bool = False) -> None:
     # Format message like built-in print
     message = sep.join(str(a) for a in args) + end
 
     # Print to console unless silent mode is active
-    if not _SILENT:
+    if not _SILENT and not log_only:
         print(*args, sep=sep, end=end, flush=flush)
 
     # Append to log file with timestamp
@@ -52,5 +49,17 @@ def trace_print(*args: Any, sep: str = " ", end: str = "\n", flush: bool = False
         # Never raise from the tracer; logging should be best-effort.
         pass
 
+def log_response(response: any) -> None:
+    # Debug: print structure when result is a dict (or show repr otherwise)
+    try:
+        if isinstance(response, dict):
+            trace_print(f"Result is dict with keys: {list(response.keys())}", log_only=True)
+            trace_print("Result (pprint):", log_only=True)
+            trace_print(pprint.pformat(response), log_only=True)
+        else:
+            trace_print(f"Result type: {type(response)}", log_only=True)
+            trace_print(repr(response), log_only=True)
+    except Exception as dbg_err:
+        trace_print(f"Failed to print result structure: {dbg_err}", log_only=True)
 
 __all__ = ["trace_print"]

@@ -1,9 +1,11 @@
 """Generic AI agent script with file access tools supporting Gemini and Ollama."""
 
 import os
+import argparse
+import json
+import re
 from typing import Optional
 from dotenv import load_dotenv
-import re
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -12,7 +14,7 @@ from langchain_ollama import ChatOllama
 from agenttools.tools import get_file_tools
 from agenttools.formatters import normalize_content
 from agenttools.system_prompt import load_system_prompt
-from agenttools.tracing import trace_print
+import agenttools.tracing as tracing
 
 # File where AI responses are appended
 AI_RESPONSE_FILE = "ai_response.md"
@@ -20,12 +22,13 @@ AI_RESPONSE_FILE = "ai_response.md"
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
 
-    def __init__(self, provider: str = "gemini", model: Optional[str] = None):
+    def __init__(self, provider: str = None, model: str = None, silent: bool = False):
         """Initialize the FileAgent.
 
         Args:
             provider: LLM provider to use ('gemini' or 'ollama')
             model: Specific model name to use (optional, uses defaults from .env)
+            trace: Whether to enable tracing output
         """
         # This will load environment variables from a .env file if present
         load_dotenv()
@@ -64,21 +67,16 @@ class FileAgent:
         else:
             raise ValueError(f"Unsupported provider: {provider}. Use 'gemini' or 'ollama'")
 
-        # Create the agent with system message. Load from SYSTEM_PROMPT_FILE
-        # (with {{VARNAME}} substitutions) using the helper in
-        # `agenttools.system_prompt`. This function raises ValueError if the
-        # env var or referenced placeholders are missing. If you prefer the
-        # built-in default, do not set SYSTEM_PROMPT_FILE.
         env_path = os.getenv("SYSTEM_PROMPT_FILE")
         if env_path:
-            # SYSTEM_PROMPT_FILE set: load it and allow errors (e.g. missing
-            # referenced env vars) to propagate so callers can see the issue.
             system_prompt = load_system_prompt()
         else:
             raise ValueError("SYSTEM_PROMPT_FILE environment variable must be set.")
 
-        trace_print("Using system prompt:")
-        trace_print(system_prompt)
+        if not silent:
+            tracing.trace_print("Using system prompt:")
+            tracing.trace_print(system_prompt)
+
         self.agent_executor = create_agent(self.llm, self.tools, system_prompt=system_prompt)
 
     def run(self, query: str) -> str:
@@ -92,6 +90,8 @@ class FileAgent:
         """
         try:
             result = self.agent_executor.invoke({"messages": [HumanMessage(content=query)]})
+
+            tracing.log_response(result)
 
             # Normalize access to messages whether `result` is a dict or an object
             msgs = None
@@ -118,7 +118,7 @@ class FileAgent:
                     with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
                         f.write(out + "\n")
                 except Exception as io_err:
-                    trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+                    tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
 
                 return out
 
@@ -128,7 +128,7 @@ class FileAgent:
                 with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
                     f.write(out + "\n")
             except Exception as io_err:
-                trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+                tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
             return out
         except Exception as e:
             msg = str(e)
@@ -152,39 +152,38 @@ class FileAgent:
                 with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
                     f.write(out + "\n")
             except Exception as io_err:
-                trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+                tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
 
             return out
 
     def chat(self):
         """Start an interactive chat session with the agent."""
-        trace_print(f"Starting chat with {self.provider.upper()} agent...")
-        trace_print("Type 'exit' or 'quit' to end the session.\n")
+        tracing.trace_print(f"Starting chat with {self.provider.upper()} agent...")
+        tracing.trace_print("Type 'exit' or 'quit' to end the session.\n")
 
         while True:
             try:
                 user_input = input("You: ").strip()
 
                 if user_input.lower() in ["exit", "quit"]:
-                    trace_print("Goodbye!")
+                    tracing.trace_print("Goodbye!")
                     break
 
                 if not user_input:
                     continue
 
                 response = self.run(user_input)
-                trace_print(f"\nAgent: {response}\n")
+                tracing.trace_print(f"\nAgent: {response}\n")
 
             except KeyboardInterrupt:
-                trace_print("\n\nGoodbye!")
+                tracing.trace_print("\n\nGoodbye!")
                 break
             except Exception as e:
-                trace_print(f"\nError: {str(e)}\n")
+                tracing.trace_print(f"\nError: {str(e)}\n")
 
 
 def main():
     """Main entry point for the agent script."""
-    import argparse
 
     parser = argparse.ArgumentParser(
         description="AI agent with file access tools supporting Gemini and Ollama"
@@ -192,12 +191,13 @@ def main():
     parser.add_argument(
         "--provider",
         choices=["gemini", "ollama"],
-        default=os.getenv("LLM_PROVIDER", "gemini"),
+        required=True,
         help="LLM provider to use (default: gemini)",
     )
     parser.add_argument(
         "--model",
         type=str,
+        required=True,
         help="Specific model name to use (optional)",
     )
     parser.add_argument(
@@ -215,26 +215,18 @@ def main():
 
     try:
         # Configure tracer silent mode if requested
-        try:
-            from agenttools.tracing import set_silent
-
-            set_silent(args.silent)
-        except Exception:
-            # If tracer setter is unavailable for any reason, continue without failing
-            pass
-
-        agent = FileAgent(provider=args.provider, model=args.model)
+        tracing.set_silent(args.silent)
+        agent = FileAgent(provider=args.provider, model=args.model, silent=args.silent)
 
         if args.query:
             # Single query mode
             response = agent.run(args.query)
-            #trace_print(response)
         else:
             # Interactive mode
             agent.chat()
 
     except Exception as e:
-        trace_print(f"Error initializing agent: {str(e)}")
+        tracing.trace_print(f"Error initializing agent: {str(e)}")
         return 1
 
     return 0
