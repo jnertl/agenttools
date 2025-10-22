@@ -4,7 +4,9 @@
 
 Main thing to consider:
  - is the ticket is clear enough to implement and to test without needing for clarification from ticket creator?
-
+ - Start response with string '[TICKET IS UNCLEAR]' if more clarification needed.
+ - Start response with string '[TICKET IS CLEAR]' if no more clarification needed.
+ 
 If the ticket is unclear, ask detailed questions which would need to be addressed.
 
 Use file tool to read files and to create context around ticket.
