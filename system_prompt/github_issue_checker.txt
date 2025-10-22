@@ -1,5 +1,3 @@
-Evaluate following ticket as developer and tester.
-
 {{ISSUE_TITLE}}
 
 {{ISSUE_BODY}}
