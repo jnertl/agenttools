@@ -156,3 +156,27 @@ The `FileAgent` class provides:
 ## License
 
 MIT License
+
+## Possible improvements for robustness
+
+The repository currently supports applying branch changes using the GitHub Contents API (file-level updates) as well as creating pull requests via the REST API. For future hardening and operational robustness consider the following improvements:
+
+- Prefer `git push` for preserving local commit history: reconstructing local commit history via the GitHub API is possible (Git Data API) but more complex and error-prone. If preserving exact commits and metadata is important, keep `git push` as the default for that workflow and offer an API-only mode for headless environments.
+
+- Use the Git Data API for full commit/tree operations if you need to reproduce multiple commits or complex history on the remote. This involves creating blobs, trees and commits and then updating refs.
+
+- Add retries and exponential backoff for transient network/API errors. Wrap API calls with a small retry strategy (3 attempts with jitter) to reduce flakiness.
+
+- Handle large diffs and big files gracefully. The Contents API has size limits; consider uploading very large diffs to a Gist and linking it from the PR body or using Git LFS for large binary files.
+
+- Improve rename detection and handling: currently renames are implemented as delete+add. To preserve rename semantics you would need to detect similarity and call the Git Data API to build a tree with the new path while preserving blob SHAs.
+
+- Add a `--remote` option and explicit `--api-push`/`--git-push` flags so callers can choose the remote update strategy at runtime.
+
+- Add comprehensive unit tests for the API push flow that mock `subprocess` and HTTP (`requests`) interactions to verify expected calls and payloads.
+
+- Add logging and a verbose mode to surface API request/response IDs and errors for easier troubleshooting.
+
+- Validate token scopes and provide clearer error messages when permissions are insufficient (for example: missing `repo` scope for private repos).
+
+These changes will make the PR/branch workflow more reliable across environments (CI, developer machines, and headless containers) and easier to debug when network or API issues occur.
