@@ -9,6 +9,7 @@ Examples:
   ./scripts/github_pr.py --git-dir /path/to/repo --repo owner/repo --base main --head issue_123 --title "Fix bug" --body-file pr_body.md
 """
 
+import os
 import sys
 import argparse
 from pathlib import Path
@@ -20,12 +21,12 @@ repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from agenttools.github_pr import get_git_diff, parse_repo_full_name, create_pull_request, create_pr_from_git, push_branch_via_api
+from agenttools.github_pr import get_git_diff, parse_repo_full_name, create_pull_request, create_pr_from_git, push_branch_via_api, push_tree_via_api
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Create GitHub PR from local git branch")
-    parser.add_argument("--git-dir", required=True, help="Path to local git repository")
+    parser = argparse.ArgumentParser(description="Create GitHub PR from local git branch (API-only)")
+    parser.add_argument("--git-dir", required=True, help="Path to local git repository (used as source of files)")
     parser.add_argument("--repo", required=True, help="GitHub repo (owner/repo or URL)")
     parser.add_argument("--base", default="main", help="Base branch to merge into")
     parser.add_argument("--head", required=True, help="Head branch name with your changes")
@@ -35,7 +36,7 @@ def main(argv=None):
     parser.add_argument("--token", help="GitHub token (overrides GITHUB_TOKEN env var)")
     parser.add_argument("--dry-run", action="store_true", help="Do not call GitHub API; print payload")
     parser.add_argument("--local", action="store_true", help="Compare local branches (no git fetch / origin refs). Uses base..head locally")
-    parser.add_argument("--no-push", action="store_true", help="Do not push the branch to origin after committing (push is default)")
+    parser.add_argument("--no-push", action="store_true", help="Do not apply changes to the remote via GitHub API (push is default)")
     parser.add_argument("--commit-message", help="Commit message to use when committing staged changes (default auto)")
 
     args = parser.parse_args(argv)
@@ -46,52 +47,34 @@ def main(argv=None):
 
     repo_full_name = parse_repo_full_name(args.repo)
 
-    # Ensure branch exists (create or checkout)
-    try:
-        # Check if branch exists
-        existing = subprocess.run(["git", "-C", args.git_dir, "rev-parse", "--verify", args.head], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if existing.returncode == 0:
-            subprocess.run(["git", "-C", args.git_dir, "checkout", args.head], check=True)
-        else:
-            subprocess.run(["git", "-C", args.git_dir, "checkout", "-b", args.head], check=True)
-    except Exception as e:
-        print(f"Failed to create or checkout branch {args.head}: {e}")
+    token = args.token or os.getenv("GITHUB_TOKEN")
+    if not token and not args.dry_run and not args.no_push:
+        print("Error: --token or GITHUB_TOKEN must be provided to apply changes via the GitHub API.")
         return 2
 
-    # Stage all changes and commit if there are staged changes
-    try:
-        subprocess.run(["git", "-C", args.git_dir, "add", "-A"], check=True)
-        status = subprocess.run(["git", "-C", args.git_dir, "status", "--porcelain"], stdout=subprocess.PIPE, check=True)
-        if status.stdout and status.stdout.strip():
-            commit_msg = args.commit_message or f"Automated commit for {args.head}"
-            subprocess.run(["git", "-C", args.git_dir, "commit", "-m", commit_msg], check=True)
-        else:
-            print("No changes to commit.")
-    except Exception as e:
-        print(f"Failed to add/commit changes: {e}")
-        return 3
+    print("API-only mode: will apply changes via GitHub API (requires token). Use --no-push to skip applying changes.")
 
     # Push branch to origin by default (unless --no-push). Use GitHub API to apply file-level changes.
     if not args.no_push:
         try:
-            api_push_res = push_branch_via_api(args.git_dir, args.repo, args.base, args.head, token=args.token)
+            api_push_res = push_tree_via_api(args.git_dir, args.repo, args.base, args.head, token=token, dry_run=args.dry_run)
             print("Pushed branch via GitHub API. Branch URL:", api_push_res.get("branch_url"))
         except Exception as e:
             print(f"Failed to push branch {args.head} via GitHub API: {e}")
             return 4
 
-    # Compute diff and create PR only if changes exist
-    res = create_pr_from_git(
-        git_dir=args.git_dir,
-        repo_url=args.repo,
-        base=args.base,
-        head=args.head,
-        title=args.title,
-        body=body,
-        token=args.token,
-        dry_run=args.dry_run,
-        use_remote=not args.local,
-    )
+    # Create PR: if we used API-only push, we already have operations available in api_push_res
+    # Build a PR body from provided body or from the API ops summary
+    if body:
+        pr_body = body
+    else:
+        ops = api_push_res.get("operations") or []
+        summary_lines = []
+        for op in ops:
+            summary_lines.append(f"{op.get('op')}: {op.get('path', op.get('ref', ''))}")
+        pr_body = "Automated PR (API push)\n\nChanges:\n" + "\n".join(summary_lines)
+
+    res = create_pull_request(repo_full_name, args.head, base=args.base, title=args.title, body=pr_body, token=token, dry_run=args.dry_run)
 
     if isinstance(res, str):
         print(res)

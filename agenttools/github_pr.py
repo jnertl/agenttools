@@ -19,6 +19,7 @@ import json
 
 import requests
 import base64
+import hashlib
 
 GITHUB_API_BASE = "https://api.github.com"
 
@@ -285,6 +286,119 @@ def push_branch_via_api(git_dir: str, repo_url: str, base: str, head: str, token
                 resp = requests.put(content_url, headers=headers, json=payload, timeout=timeout)
                 resp.raise_for_status()
                 ops.append({"op": "add_or_update", "path": path, "response": resp.json()})
+
+    branch_url = f"https://github.com/{repo_full}/tree/{head}"
+    return {"branch_url": branch_url, "operations": ops}
+
+
+def push_tree_via_api(git_dir: str, repo_url: str, base: str, head: str, token: Optional[str] = None, dry_run: bool = False, timeout: int = 10) -> Dict[str, Any]:
+    """Push the working tree in `git_dir` to `head` branch on GitHub using the Git Data and Contents APIs.
+
+    Behavior:
+    - Uses the Git Trees API to list files in the `base` branch on the remote.
+    - Walks the local `git_dir` working tree (skips .git) and computes git blob SHA for each file.
+    - Adds/updates files whose blob SHA differs, and deletes remote files not present locally.
+    - Creates the head branch ref from base if it does not exist.
+
+    Returns a dict with 'branch_url' and 'operations'. If `dry_run` is True, no mutating API calls are made; operations describe the planned actions.
+    """
+    token = token or os.getenv("GITHUB_TOKEN")
+    if not token:
+        raise ValueError("GITHUB_TOKEN must be set in environment or passed as token")
+
+    repo_full = parse_repo_full_name(repo_url)
+    owner, repo = repo_full.split("/", 1)
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+
+    # Get base commit SHA and tree SHA
+    ref_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/ref/heads/{base}"
+    r = requests.get(ref_url, headers=headers, timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"Failed to get base ref {base}: {r.status_code} {r.text}")
+    base_commit_sha = r.json()["object"]["sha"]
+
+    commit_resp = requests.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/commits/{base_commit_sha}", headers=headers, timeout=timeout)
+    commit_resp.raise_for_status()
+    base_tree_sha = commit_resp.json()["tree"]["sha"]
+
+    # Get remote tree recursively
+    tree_resp = requests.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/{base_tree_sha}", headers=headers, params={"recursive": "1"}, timeout=timeout)
+    tree_resp.raise_for_status()
+    remote_entries = tree_resp.json().get("tree", [])
+    remote_map = {e["path"]: e["sha"] for e in remote_entries if e["type"] == "blob"}
+
+    # Build local file map (path -> blob_sha)
+    local_map = {}
+    for root, dirs, files in os.walk(git_dir):
+        # skip .git
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for fname in files:
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, git_dir).replace(os.path.sep, "/")
+            # read bytes and compute git blob sha
+            with open(full, "rb") as fh:
+                data = fh.read()
+            header = f"blob {len(data)}\0".encode("utf-8")
+            sha = hashlib.sha1(header + data).hexdigest()
+            local_map[rel] = {"sha": sha, "bytes": data}
+
+    # Determine operations
+    adds = []
+    updates = []
+    deletes = []
+    for path, info in local_map.items():
+        if path not in remote_map:
+            adds.append(path)
+        elif remote_map[path] != info["sha"]:
+            updates.append(path)
+
+    for path in remote_map:
+        if path not in local_map:
+            deletes.append(path)
+
+    ops = []
+
+    # Ensure head ref exists (create from base if missing)
+    head_ref_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/ref/heads/{head}"
+    r = requests.get(head_ref_url, headers=headers, timeout=timeout)
+    if r.status_code == 404:
+        if dry_run:
+            ops.append({"op": "create_ref", "ref": head, "from": base_commit_sha})
+        else:
+            create_ref_payload = {"ref": f"refs/heads/{head}", "sha": base_commit_sha}
+            rr = requests.post(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/refs", headers=headers, json=create_ref_payload, timeout=timeout)
+            rr.raise_for_status()
+            ops.append({"op": "create_ref", "ref": head, "response": rr.json()})
+
+    # Apply adds/updates
+    for path in adds + updates:
+        full = os.path.join(git_dir, path)
+        data = local_map[path]["bytes"]
+        b64 = base64.b64encode(data).decode("utf-8")
+        content_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
+        payload = {"message": f"Add/Update {path}", "content": b64, "branch": head}
+        if path in remote_map:
+            payload["sha"] = remote_map[path]
+        if dry_run:
+            ops.append({"op": "add_or_update", "path": path, "payload": payload})
+        else:
+            resp = requests.put(content_url, headers=headers, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            ops.append({"op": "add_or_update", "path": path, "response": resp.json()})
+
+    # Apply deletes
+    for path in deletes:
+        content_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
+        sha = remote_map.get(path)
+        payload = {"message": f"Delete {path}", "branch": head, "sha": sha}
+        if dry_run:
+            ops.append({"op": "delete", "path": path, "payload": payload})
+        else:
+            resp = requests.delete(content_url, headers=headers, json=payload, timeout=timeout)
+            # if file missing, ignore
+            if resp.status_code not in (200, 204):
+                resp.raise_for_status()
+            ops.append({"op": "delete", "path": path, "response": resp.json() if resp.content else None})
 
     branch_url = f"https://github.com/{repo_full}/tree/{head}"
     return {"branch_url": branch_url, "operations": ops}
