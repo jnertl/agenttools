@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Usage: run_agent_component.sh <component> [--issue <num>] [--repo <owner/repo>] [--ticket-file <path>]
-# Components: middlewaresw, mwclientwithgui, integration_testing
-# Environment overrides supported via exports: WORKSPACE, SOURCE_ROOT_DIR, PROVIDER, MODEL, GITHUB_TOKEN, issue, repository_full_name
-# The script will run the agenttools agent with the appropriate SYSTEM_PROMPT_FILE and ISSUE_TICKET_FOR_* env vars,
-# then process the generated agent response, check for git diffs in the relevant repo, and create a PR/comment if changes exist.
 
 set -euo pipefail
 
@@ -16,6 +11,12 @@ fi
 
 COMPONENT=$1
 shift
+
+# defaults overridden by flags
+ARGS_PROVIDER=""
+ARGS_MODEL=""
+ARGS_ISSUE=""
+ARGS_REPO_FULL_NAME=""
 
 # ensure AGENT_LOG is set and writable
 if [ -z "${AGENT_LOG:-}" ]; then
@@ -57,17 +58,15 @@ fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --issue)
-      issue="$2"; shift 2;;
+      ARGS_ISSUE="$2"; shift 2;;
     --repo)
-      repository_full_name="$2"; shift 2;;
-    --ticket-file)
-      ISSUE_TICKET_ANALYSIS="$2"; shift 2;;
+      ARGS_REPO_FULL_NAME="$2"; shift 2;;
     --provider)
-      PROVIDER="$2"; shift 2;;
+      ARGS_PROVIDER="$2"; shift 2;;
     --model)
-      MODEL="$2"; shift 2;;
+      ARGS_MODEL="$2"; shift 2;;
     --help)
-      echo "Usage: $PROGNAME <component> [--issue <num>] [--repo <owner/repo>] [--ticket-file <path>] [--provider <provider>] [--model <model>]" >>${AGENT_LOG}; exit 0;;
+      echo "Usage: $PROGNAME <component> [--issue <num>] [--repo <owner/repo>] [--provider <provider>] [--model <model>]" >>${AGENT_LOG}; exit 0;;
     *)
       echo "Unknown arg: $1" >>${AGENT_LOG}; exit 2;;
   esac
@@ -84,18 +83,21 @@ fi
 run_component() {
   local component="$1"
   local prompt_file="$2"
-  local ticket_env_var="$3"
-  local git_repo_dir="$4"
-  local git_remote_repo_url="$5"
+  local git_repo_dir="$3"
+  local git_remote_repo_url="$4"
 
   echo "Running agent for component: $component" >>${AGENT_LOG}
 
   rm -f "$AGENT_RESPONSE_FILE" || true
-  export "$ticket_env_var"="$ISSUE_TICKET_ANALYSIS"
   export SYSTEM_PROMPT_FILE="$prompt_file"
 
   bash "./scripts/ongoing_printer.sh" \
-    python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --response-file "$AGENT_RESPONSE_FILE" --query "Analyse"
+    python -m agenttools.agent \
+      --provider "$ARGS_PROVIDER" \
+      --model "$ARGS_MODEL" \
+      --silent \
+      --response-file "$AGENT_RESPONSE_FILE" \
+      --query "Analyse"
 
   python "./scripts/clean_markdown_utf8.py" \
       "$AGENT_RESPONSE_FILE" "$WORKSPACE/${component}_analysis.md"
@@ -134,8 +136,8 @@ run_component() {
   fi
 
   python "$AGENT_TOOLS_DIR/scripts/github_comment.py" \
-      --repo "$repository_full_name" \
-      --issue "$issue" \
+      --repo "$ARGS_REPO_FULL_NAME" \
+      --issue "$ARGS_ISSUE" \
       --body "$AGENT_RESPONSE_CONTENT" \
       --token "$GITHUB_TOKEN" || true
 }
@@ -143,19 +145,21 @@ run_component() {
 # dispatch
 case "$COMPONENT" in
   middlewaresw)
-    run_component "middlewaresw" "${WORKSPACE}/system_prompts/middlewaresw_developer.txt" \
-        "ISSUE_TICKET_FOR_MIDDLEWARESW" \
+    run_component "middlewaresw" \
+        "${WORKSPACE}/system_prompts/middlewaresw_developer.txt" \
         "${SOURCE_ROOT_DIR}/middlewaresw" \
         "https://github.com/jnertl/middlewaresw.git"
     ;;
   mwclientwithgui)
-    run_component "mwclientwithgui" "${WORKSPACE}/system_prompts/mwclientwithgui_developer.txt" \
-        "ISSUE_TICKET_FOR_MWCLIENTWITHGUI" "${SOURCE_ROOT_DIR}/mwclientwithgui" \
+    run_component "mwclientwithgui" \
+        "${WORKSPACE}/system_prompts/mwclientwithgui_developer.txt" \
+        "${SOURCE_ROOT_DIR}/mwclientwithgui" \
         "https://github.com/jnertl/mwclientwithgui.git"
     ;;
   integration_testing)
-    run_component "integration_testing" "${WORKSPACE}/system_prompts/integration_testing.txt" \
-        "ISSUE_TICKET_FOR_INTEGRATION_TESTING" "${SOURCE_ROOT_DIR}/testing" \
+    run_component "integration_testing" \
+        "${WORKSPACE}/system_prompts/integration_testing.txt" \
+        "${SOURCE_ROOT_DIR}/testing" \
         "https://github.com/jnertl/testing.git"
     ;;
   *)
