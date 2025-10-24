@@ -1,8 +1,8 @@
 """Simple tracing utility: prints to console and appends to a log file.
 
 Provides trace_print which mirrors the built-in print signature for
-convenience but also writes the output to `agent_log.txt` in the current
-working directory.
+convenience but also writes the output to file defined by environment 
+variable `AGENT_LOG`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,10 @@ from typing import Any
 from datetime import datetime, timezone
 
 # Log file name used by trace_print
-AGENT_LOG_FILE = "agent_log.txt"
+AGENT_LOG_FILE = os.environ.get("AGENT_LOG")
+if not AGENT_LOG_FILE:
+    raise RuntimeError("AGENT_LOG environment variable must be set to a non-empty log filename")
+
 _SILENT = False
 
 

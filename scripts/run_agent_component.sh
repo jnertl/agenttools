@@ -18,14 +18,14 @@ COMPONENT=$1
 shift
 
 # ensure AGENT_LOG is set and writable
-if [ -z "${AGENT_LOG:-}" ]; then
+if [ -z "${AGENT_LOG}" ]; then
   echo "AGENT_LOG is not set. Export AGENT_LOG (path to agent log file) and retry." >&2
   exit 2
 fi
 
 # ensure AGENT_TOOLS_DIR is set, exists, and we're running from it
 if [ -z "${AGENT_TOOLS_DIR:-}" ]; then
-  echo "AGENT_TOOLS_DIR is not set. Export AGENT_TOOLS_DIR and run this script from that directory." >&2
+  echo "AGENT_TOOLS_DIR is not set. Export AGENT_TOOLS_DIR and run this script from that directory." >>${AGENT_LOG}
   exit 2
 fi
 
@@ -73,7 +73,7 @@ run_component() {
   local git_repo_dir="$4"
   local git_remote_repo_url="$5"
 
-  echo "Running agent for component: $component"
+  echo "Running agent for component: $component" >>${AGENT_LOG}
 
   rm -f "$WORKSPACE/agent_response.md" || true
   export "$ticket_env_var"="$ISSUE_TICKET_ANALYSIS"
@@ -143,7 +143,7 @@ case "$COMPONENT" in
         "https://github.com/jnertl/testing.git"
     ;;
   *)
-    echo "Unknown component: $COMPONENT"; exit 2;;
+    echo "Unknown component: $COMPONENT" >>${AGENT_LOG}; exit 2;;
 esac
 
 # done
