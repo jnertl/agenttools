@@ -17,6 +17,18 @@ fi
 COMPONENT=$1
 shift
 
+# ensure AGENT_LOG is set and writable
+if [ -z "${AGENT_LOG:-}" ]; then
+  echo "AGENT_LOG is not set. Export AGENT_LOG (path to agent log file) and retry." >&2
+  exit 2
+fi
+
+# ensure AGENT_TOOLS_DIR is set, exists, and we're running from it
+if [ -z "${AGENT_TOOLS_DIR:-}" ]; then
+  echo "AGENT_TOOLS_DIR is not set. Export AGENT_TOOLS_DIR and run this script from that directory." >&2
+  exit 2
+fi
+
 # defaults (can be overridden by env or flags)
 WORKSPACE=${WORKSPACE:-$PWD}
 SOURCE_ROOT_DIR=${SOURCE_ROOT_DIR:-$PWD}
@@ -51,9 +63,9 @@ ISSUE_TICKET_ANALYSIS=${ISSUE_TICKET_ANALYSIS:-issue_ticket_analysis.md}
 
 # ensure agenttools virtualenv exists (best-effort - assumes already bootstrapped in CI as in pipeline)
 # Activate if available
-if [ -d "$SOURCE_ROOT_DIR/agenttools/agent_venv" ]; then
+if [ -d "$AGENT_TOOLS_DIR/agent_venv" ]; then
   # shellcheck disable=SC1090
-  source "$SOURCE_ROOT_DIR/agenttools/agent_venv/bin/activate"
+  source "$AGENT_TOOLS_DIR/agent_venv/bin/activate"
 fi
 
 # helper to run agent for a given prompt and repo
@@ -70,15 +82,10 @@ run_component() {
   export "$ticket_env_var"="$WORKSPACE/$ISSUE_TICKET_ANALYSIS"
   export SYSTEM_PROMPT_FILE="$prompt_file"
 
-  # run the agent (the original pipeline used an ongoing_printer.sh wrapper)
-  if [ -x "$SOURCE_ROOT_DIR/testing/scripts/ongoing_printer.sh" ]; then
-    bash "$SOURCE_ROOT_DIR/testing/scripts/ongoing_printer.sh" \
-        python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --query "Analyse"
-  else
-    python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --query "Analyse"
-  fi
+  bash "./scripts/ongoing_printer.sh" \
+      python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --query "Analyse"
 
-  python "$SOURCE_ROOT_DIR/testing/scripts/clean_markdown_utf8.py" "agent_response.md" "$WORKSPACE/${component}_analysis.md"
+  python "./scripts/clean_markdown_utf8.py" "agent_response.md" "$WORKSPACE/${component}_analysis.md"
 
   # detect git diff
   GIT_DIFF=$(git -C "$git_repo_dir" diff || true)
@@ -89,7 +96,7 @@ run_component() {
     TITLE="${component} updates for issue #${issue}"
 
     # create PR in the remote repository using provided scripts
-    response=$(python "$SOURCE_ROOT_DIR/testing/scripts/github_pr.py" \
+    response=$(python "$AGENT_TOOLS_DIR/scripts/github_pr.py" \
       --local \
       --git-dir "$git_repo_dir" \
       --repo "$git_remote_repo_url" \
@@ -100,32 +107,43 @@ run_component() {
       --commit-message "Commit ${component} updates for issue #${issue}" \
       --token "$GITHUB_TOKEN" || true)
 
-    echo "Created PR response: $response" >> "$WORKSPACE/agent_log.txt" || true
+    echo "Created PR response: $response" >> "$AGENT_LOG" || true
 
     BRANCH_URL=$(printf '%s\n' "$response" | sed -n 's/^[[:space:]]*Branch URL:[[:space:]]*//p' | head -n1 || true)
     if [ -n "$BRANCH_URL" ]; then
-      echo "Found Branch URL: $BRANCH_URL" >> "$WORKSPACE/agent_log.txt" || true
+      echo "Found Branch URL: $BRANCH_URL" >> "$AGENT_LOG" || true
       AGENT_RESPONSE_CONTENT=$(printf '%s\n\n**See branch [%s](%s)**\n' "$AGENT_RESPONSE_CONTENT" "$BRANCH_NAME" "$BRANCH_URL")
     else
-      echo "No Branch URL found in response" >> "$WORKSPACE/agent_log.txt" || true
+      echo "No Branch URL found in response" >> "$AGENT_LOG" || true
     fi
   else
-    echo "No git diff for $component" >> "$WORKSPACE/agent_log.txt" || true
+    echo "No git diff for $component" >> "$AGENT_LOG" || true
   fi
 
-  python "$SOURCE_ROOT_DIR/scripts/github_comment.py" --repo "$repository_full_name" --issue "$issue" --body "$AGENT_RESPONSE_CONTENT" --token "$GITHUB_TOKEN" || true
+  python "$AGENT_TOOLS_DIR/scripts/github_comment.py" \
+      --repo "$repository_full_name" \
+      --issue "$issue" \
+      --body "$AGENT_RESPONSE_CONTENT" \
+      --token "$GITHUB_TOKEN" || true
 }
 
 # dispatch
 case "$COMPONENT" in
   middlewaresw)
-    run_component "middlewaresw" "${WORKSPACE}/system_prompts/middlewaresw_developer.txt" "ISSUE_TICKET_FOR_MIDDLEWARESW" "${SOURCE_ROOT_DIR}/middlewaresw" "https://github.com/jnertl/middlewaresw.git"
+    run_component "middlewaresw" "${WORKSPACE}/system_prompts/middlewaresw_developer.txt" \
+        "ISSUE_TICKET_FOR_MIDDLEWARESW" \
+        "${SOURCE_ROOT_DIR}/middlewaresw" \
+        "https://github.com/jnertl/middlewaresw.git"
     ;;
   mwclientwithgui)
-    run_component "mwclientwithgui" "${WORKSPACE}/system_prompts/mwclientwithgui_developer.txt" "ISSUE_TICKET_FOR_MWCLIENTWITHGUI" "${SOURCE_ROOT_DIR}/mwclientwithgui" "https://github.com/jnertl/mwclientwithgui.git"
+    run_component "mwclientwithgui" "${WORKSPACE}/system_prompts/mwclientwithgui_developer.txt" \
+        "ISSUE_TICKET_FOR_MWCLIENTWITHGUI" "${SOURCE_ROOT_DIR}/mwclientwithgui" \
+        "https://github.com/jnertl/mwclientwithgui.git"
     ;;
   integration)
-    run_component "integration_testing" "${WORKSPACE}/system_prompts/integration_testing.txt" "ISSUE_TICKET_FOR_INTEGRATION_TESTING" "${SOURCE_ROOT_DIR}/testing" "https://github.com/jnertl/testing.git"
+    run_component "integration_testing" "${WORKSPACE}/system_prompts/integration_testing.txt" \
+        "ISSUE_TICKET_FOR_INTEGRATION_TESTING" "${SOURCE_ROOT_DIR}/testing" \
+        "https://github.com/jnertl/testing.git"
     ;;
   *)
     echo "Unknown component: $COMPONENT"; exit 2;;
