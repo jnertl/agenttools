@@ -58,9 +58,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# set default ticket file name if not provided
-ISSUE_TICKET_ANALYSIS=${ISSUE_TICKET_ANALYSIS:-issue_ticket_analysis.md}
-
 # ensure agenttools virtualenv exists (best-effort - assumes already bootstrapped in CI as in pipeline)
 # Activate if available
 if [ -d "$AGENT_TOOLS_DIR/agent_venv" ]; then
@@ -79,7 +76,7 @@ run_component() {
   echo "Running agent for component: $component"
 
   rm -f "$WORKSPACE/agent_response.md" || true
-  export "$ticket_env_var"="$WORKSPACE/$ISSUE_TICKET_ANALYSIS"
+  export "$ticket_env_var"="$ISSUE_TICKET_ANALYSIS"
   export SYSTEM_PROMPT_FILE="$prompt_file"
 
   bash "./scripts/ongoing_printer.sh" \
