@@ -12,10 +12,8 @@ import pprint
 from typing import Any
 from datetime import datetime, timezone
 
-# Log file name used by trace_print
-AGENT_LOG_FILE = os.environ.get("AGENT_LOG")
-if not AGENT_LOG_FILE:
-    raise RuntimeError("AGENT_LOG environment variable must be set to a non-empty log filename")
+# Log file name used by trace_print. Default to 'agent_log.txt' when AGENT_LOG is not set.
+AGENT_LOG_FILE = os.environ.get("AGENT_LOG") or "agent_log.txt"
 
 _SILENT = False
 

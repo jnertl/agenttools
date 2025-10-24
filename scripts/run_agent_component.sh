@@ -3,7 +3,7 @@
 # Components: middlewaresw, mwclientwithgui, integration_testing
 # Environment overrides supported via exports: WORKSPACE, SOURCE_ROOT_DIR, PROVIDER, MODEL, GITHUB_TOKEN, issue, repository_full_name
 # The script will run the agenttools agent with the appropriate SYSTEM_PROMPT_FILE and ISSUE_TICKET_FOR_* env vars,
-# then process the generated agent_response.md, check for git diffs in the relevant repo, and create a PR/comment if changes exist.
+# then process the generated agent response, check for git diffs in the relevant repo, and create a PR/comment if changes exist.
 
 set -euo pipefail
 
@@ -18,8 +18,14 @@ COMPONENT=$1
 shift
 
 # ensure AGENT_LOG is set and writable
-if [ -z "${AGENT_LOG}" ]; then
-  echo "AGENT_LOG is not set. Export AGENT_LOG (path to agent log file) and retry." >&2
+if [ -z "${AGENT_LOG:-}" ]; then
+  echo "AGENT_LOG is not set. Export AGENT_LOG (path to agent log file) and retry." >>${AGENT_LOG}
+  exit 2
+fi
+
+# ensure AGENT_RESPONSE_FILE is set and writable
+if [ -z "${AGENT_RESPONSE_FILE:-}" ]; then
+  echo "AGENT_RESPONSE_FILE is not set. Export AGENT_RESPONSE_FILE (path to agent response file) and retry." >>${AGENT_LOG}
   exit 2
 fi
 
@@ -29,14 +35,35 @@ if [ -z "${AGENT_TOOLS_DIR:-}" ]; then
   exit 2
 fi
 
-# defaults (can be overridden by env or flags)
-WORKSPACE=${WORKSPACE:-$PWD}
-SOURCE_ROOT_DIR=${SOURCE_ROOT_DIR:-$PWD}
-PROVIDER=${PROVIDER:-gemini}
-MODEL=${MODEL:-"gemini-2.5-flash"}
-GITHUB_TOKEN=${GITHUB_TOKEN:-}
-issue=${issue:-123}
-repository_full_name=${repository_full_name:-"owner/repo"}
+# ensure WORKSPACE is set and is a directory
+if [ -z "${WORKSPACE:-}" ]; then
+  echo "WORKSPACE is not set. Export WORKSPACE (path to workspace dir) and retry." >>${AGENT_LOG}
+  exit 2
+fi
+
+# ensure SOURCE_ROOT_DIR is set and is a directory
+if [ -z "${SOURCE_ROOT_DIR:-}" ]; then
+  echo "SOURCE_ROOT_DIR is not set. Export SOURCE_ROOT_DIR (path to source root dir) and retry." >>${AGENT_LOG}
+  exit 2
+fi
+
+# ensure PROVIDER is set and is a directory
+if [ -z "${PROVIDER:-}" ]; then
+  echo "PROVIDER is not set. Export PROVIDER (name of the provider) and retry." >>${AGENT_LOG}
+  exit 2
+fi
+
+# ensure MODEL is set and is a directory
+if [ -z "${MODEL:-}" ]; then
+  echo "MODEL is not set. Export MODEL (name of the model) and retry." >>${AGENT_LOG}
+  exit 2
+fi
+
+# ensure GITHUB_TOKEN is set and is a directory
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "GITHUB_TOKEN is not set. Export GITHUB_TOKEN (GitHub token) and retry." >>${AGENT_LOG}
+  exit 2
+fi
 
 # flags
 while [[ $# -gt 0 ]]; do
@@ -52,9 +79,9 @@ while [[ $# -gt 0 ]]; do
     --model)
       MODEL="$2"; shift 2;;
     --help)
-      echo "Usage: $PROGNAME <component> [--issue <num>] [--repo <owner/repo>] [--ticket-file <path>] [--provider <provider>] [--model <model>]"; exit 0;;
+      echo "Usage: $PROGNAME <component> [--issue <num>] [--repo <owner/repo>] [--ticket-file <path>] [--provider <provider>] [--model <model>]" >>${AGENT_LOG}; exit 0;;
     *)
-      echo "Unknown arg: $1"; exit 2;;
+      echo "Unknown arg: $1" >>${AGENT_LOG}; exit 2;;
   esac
 done
 
@@ -75,21 +102,22 @@ run_component() {
 
   echo "Running agent for component: $component" >>${AGENT_LOG}
 
-  rm -f "$WORKSPACE/agent_response.md" || true
+  rm -f "$AGENT_RESPONSE_FILE" || true
   export "$ticket_env_var"="$ISSUE_TICKET_ANALYSIS"
   export SYSTEM_PROMPT_FILE="$prompt_file"
 
   bash "./scripts/ongoing_printer.sh" \
-      python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --query "Analyse"
+    python -m agenttools.agent --provider "$PROVIDER" --silent --model "$MODEL" --response-file "$AGENT_RESPONSE_FILE" --query "Analyse"
 
-  python "./scripts/clean_markdown_utf8.py" "agent_response.md" "$WORKSPACE/${component}_analysis.md"
+  python "./scripts/clean_markdown_utf8.py" \
+      "$AGENT_RESPONSE_FILE" "$WORKSPACE/${component}_analysis.md"
 
   # detect git diff
   GIT_DIFF=$(git -C "$git_repo_dir" diff || true)
   AGENT_RESPONSE_CONTENT=$(cat "$WORKSPACE/${component}_analysis.md" || echo "No response generated.")
 
   if [ -n "$GIT_DIFF" ]; then
-    BRANCH_NAME="issue_${issue}_${component}_updates"
+    BRANCH_NAME="issue_${issue}_${component}_updates_$(date +%Y%m%d%H%M%S)"
     TITLE="${component} updates for issue #${issue}"
 
     # create PR in the remote repository using provided scripts

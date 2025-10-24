@@ -16,13 +16,10 @@ from agenttools.formatters import normalize_content
 from agenttools.system_prompt import load_system_prompt
 import agenttools.tracing as tracing
 
-# File where AI responses are appended
-AI_RESPONSE_FILE = "agent_response.md"
-
 class FileAgent:
     """An AI agent with file access capabilities supporting Gemini and Ollama providers."""
 
-    def __init__(self, provider: str = None, model: str = None):
+    def __init__(self, provider: str = None, model: str = None, response_file: str | None = None):
         """Initialize the FileAgent.
 
         Args:
@@ -34,6 +31,8 @@ class FileAgent:
 
         self.provider = provider.lower()
         self.tools = get_file_tools()
+        # File where AI responses are appended
+        self.response_file = response_file
 
         # Initialize the appropriate LLM
         if self.provider == "gemini":
@@ -114,20 +113,20 @@ class FileAgent:
 
                 # Append to AI_RESPONSE_FILE and return
                 try:
-                    with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
+                    with open(self.response_file, "a", encoding="utf-8") as f:
                         f.write(out + "\n")
                 except Exception as io_err:
-                    tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+                    tracing.trace_print(f"Warning: failed to write {self.response_file}: {io_err}")
 
                 return out
 
             # Nothing matched; return a readable representation
             out = normalize_content(result)
             try:
-                with open(AI_RESPONSE_FILE, "a", encoding="utf-8") as f:
+                with open(self.response_file, "a", encoding="utf-8") as f:
                     f.write(out + "\n")
             except Exception as io_err:
-                tracing.trace_print(f"Warning: failed to write {AI_RESPONSE_FILE}: {io_err}")
+                tracing.trace_print(f"Warning: failed to write {self.response_file}: {io_err}")
             return out
         except Exception as e:
             msg = str(e)
@@ -182,6 +181,11 @@ def main():
         help="Specific model name to use (optional)",
     )
     parser.add_argument(
+        "--response-file",
+        type=str,
+        help="Path to file where AI responses will be appended",
+    )
+    parser.add_argument(
         "--query",
         type=str,
         help="Single query to execute (if not provided, starts interactive mode)",
@@ -197,7 +201,7 @@ def main():
     try:
         # Configure tracer silent mode if requested
         tracing.set_silent(args.silent)
-        agent = FileAgent(provider=args.provider, model=args.model)
+        agent = FileAgent(provider=args.provider, model=args.model, response_file=args.response_file)
 
         if args.query:
             # Single query mode
