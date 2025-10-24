@@ -47,18 +47,6 @@ if [ -z "${SOURCE_ROOT_DIR:-}" ]; then
   exit 2
 fi
 
-# ensure PROVIDER is set and is a directory
-if [ -z "${PROVIDER:-}" ]; then
-  echo "PROVIDER is not set. Export PROVIDER (name of the provider) and retry." >>${AGENT_LOG}
-  exit 2
-fi
-
-# ensure MODEL is set and is a directory
-if [ -z "${MODEL:-}" ]; then
-  echo "MODEL is not set. Export MODEL (name of the model) and retry." >>${AGENT_LOG}
-  exit 2
-fi
-
 # ensure GITHUB_TOKEN is set and is a directory
 if [ -z "${GITHUB_TOKEN:-}" ]; then
   echo "GITHUB_TOKEN is not set. Export GITHUB_TOKEN (GitHub token) and retry." >>${AGENT_LOG}
