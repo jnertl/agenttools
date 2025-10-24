@@ -61,7 +61,7 @@ class FileAgent:
                 temperature=0.1,
                 top_p=0.8,
                 top_k=50,
-                max_tokens=4096
+                max_tokens=8192
             )
         else:
             raise ValueError(f"Unsupported provider: {provider}. Use 'gemini' or 'ollama'")
