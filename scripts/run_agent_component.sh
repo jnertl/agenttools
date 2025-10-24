@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: run_agent_component.sh <component> [--issue <num>] [--repo <owner/repo>] [--ticket-file <path>]
-# Components: middlewaresw, mwclientwithgui, integration
+# Components: middlewaresw, mwclientwithgui, integration_testing
 # Environment overrides supported via exports: WORKSPACE, SOURCE_ROOT_DIR, PROVIDER, MODEL, GITHUB_TOKEN, issue, repository_full_name
 # The script will run the agenttools agent with the appropriate SYSTEM_PROMPT_FILE and ISSUE_TICKET_FOR_* env vars,
 # then process the generated agent_response.md, check for git diffs in the relevant repo, and create a PR/comment if changes exist.
@@ -140,7 +140,7 @@ case "$COMPONENT" in
         "ISSUE_TICKET_FOR_MWCLIENTWITHGUI" "${SOURCE_ROOT_DIR}/mwclientwithgui" \
         "https://github.com/jnertl/mwclientwithgui.git"
     ;;
-  integration)
+  integration_testing)
     run_component "integration_testing" "${WORKSPACE}/system_prompts/integration_testing.txt" \
         "ISSUE_TICKET_FOR_INTEGRATION_TESTING" "${SOURCE_ROOT_DIR}/testing" \
         "https://github.com/jnertl/testing.git"
